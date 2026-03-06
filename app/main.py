@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import shutil
 import asyncio
-from services import RAGEngine
+from .services import RAGEngine
 
 st.set_page_config(page_title="VeriStack RAG", page_icon="🛡️")
 
