@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import shutil
 import asyncio
-from services import RAGEngine
+from app.services import RAGEngine
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
