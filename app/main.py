@@ -2,10 +2,11 @@ import streamlit as st
 import os
 import shutil
 import asyncio
-from app.services import RAGEngine
 import sys
+import os
+import streamlit as st
+from services import RAGEngine
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 import streamlit as st
 
 st.set_page_config(page_title="VeriStack RAG", page_icon="🛡️")
