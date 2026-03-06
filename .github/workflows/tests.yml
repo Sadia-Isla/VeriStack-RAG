@@ -1,0 +1,39 @@
+name: Python CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      # We spin up Qdrant in the cloud so your integration tests pass!
+      qdrant:
+        image: qdrant/qdrant
+        ports:
+          - 6333:6333
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest httpx  # httpx is needed for FastAPI TestClient
+        
+    - name: Run Tests with Pytest
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        QDRANT_URL: http://localhost:6333
+      run: |
+        pytest
