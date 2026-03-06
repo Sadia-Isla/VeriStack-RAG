@@ -8,14 +8,15 @@ from qdrant_client import QdrantClient, AsyncQdrantClient
 
 class RAGEngine:
     def __init__(self):
-        # Configuration
+        # Configure global settings
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
         
+        # Get credentials from environment variables set in main.py
         url = os.getenv("QDRANT_URL")
         api_key = os.getenv("QDRANT_API_KEY")
 
-        # Sync and Async clients
+        # Initialize both sync and async clients to support all vector store operations
         self.client = QdrantClient(url=url, api_key=api_key)
         self.aclient = AsyncQdrantClient(url=url, api_key=api_key)
         
@@ -28,11 +29,12 @@ class RAGEngine:
     async def process_pdf(self, file_path):
         from llama_index.readers.file import PyMuPDFReader
         
+        # Use PyMuPDF for high-quality text extraction from the Benefits Policy PDF
         loader = PyMuPDFReader()
         documents = loader.load_data(file_path=file_path)
         
-        collection_exists = self.client.collection_exists("docs")
-        if not collection_exists:
+        # Auto-create collection if it doesn't exist in your Qdrant Cloud
+        if not self.client.collection_exists("docs"):
             from qdrant_client.http import models as rest_models
             self.client.create_collection(
                 collection_name="docs",
@@ -47,7 +49,8 @@ class RAGEngine:
         query_engine = index.as_query_engine(similarity_top_k=top_k)
         response = await query_engine.aquery(text)
         
-        # FIXED: Corrected dictionary structure for line 57
+        # This dictionary is where your SyntaxError was located. 
+        # Ensure every key has a value and every pair is separated by a comma.
         return {
             "answer": str(response),
             "sources":
