@@ -11,3 +11,5 @@ qdrant-client
 requests
 python-dotenv
 httpx
+pymupdf
+llama-index-readers-file
