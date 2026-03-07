@@ -22,14 +22,7 @@ if "messages" not in st.session_state:
 # --- SIDEBAR: CONFIG & LINKS ---
 with st.sidebar:
     # Replace st.image with this:
-    with st.sidebar:
-    # This centers the icon and adds a bit of spacing
-    _, col_img, _ = st.columns([1, 2, 1])
-    with col_img:
-        st.image("https://img.icons8.com")
-    
-    st.markdown("<h2 style='text-align: center;'>VeriStack RAG</h2>", unsafe_allow_html=True)
-    st.divider())
+    st.image("https://img.icons8.com", width=80)
     st.title("🛡️ VeriStack RAG")
     
     with st.expander("🔑 Need API Keys?", expanded=False):
