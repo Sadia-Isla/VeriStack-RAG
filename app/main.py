@@ -2,7 +2,6 @@ import sys
 import os
 import streamlit as st
 
-# Path configuration for local imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from services import RAGEngine
 
@@ -20,19 +19,18 @@ st.markdown("""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- SIDEBAR: CONFIG & GUIDE ---
+# --- SIDEBAR: CONFIG & LINKS ---
 with st.sidebar:
-    # Reliable Icon Link
-    st.image("https://img.icons8.com", width=80)
-    st.title("VeriStack RAG")
+    st.image("https://cdn-icons-png.flaticon.com", width=80)
+    st.title("🛡️ VeriStack RAG")
     
     with st.expander("🔑 Need API Keys?", expanded=False):
         st.markdown("""
         **1. OpenAI Key**  
-        [Get it here](https://platform.openai.com)
+        Create one at: [platform.openai.com](https://platform.openai.com)
         
         **2. Qdrant Cloud**  
-        [Get URL & Key here](https://cloud.qdrant.io)
+        Get your Cluster URL and Key at: [cloud.qdrant.io](https://cloud.qdrant.io)
         """)
 
     st.subheader("⚙️ Setup Credentials")
@@ -42,7 +40,7 @@ with st.sidebar:
     
     st.divider()
     st.subheader("📂 Knowledge Base")
-    up_file = st.file_uploader("Upload Policy PDF", type="pdf")
+    up_file = st.file_uploader("Upload your PDF Document", type="pdf")
     idx_btn = st.button("🚀 Start Indexing", use_container_width=True, type="primary")
 
 # --- ENGINE INITIALIZATION ---
@@ -56,19 +54,19 @@ engine = get_engine(u_key, q_url, q_key)
 
 # --- MAIN INTERFACE ---
 st.title("🛡️ VeriStack RAG")
-st.caption("Secure AI Intelligence for Corporate Documents")
+st.caption("Secure AI Intelligence Layer for Document Analysis")
 
 if not engine:
-    st.info("👋 **Welcome!** Please enter your API keys in the sidebar to begin analyzing documents.")
+    st.info("👋 Welcome! To begin, please enter your **API Keys** in the sidebar. Once connected, you can upload and query any PDF.")
     st.stop()
 
 # Indexing Logic
 if up_file and idx_btn:
-    with st.status("Analyzing document content...", expanded=True) as s:
+    with st.status("Reading document content...", expanded=True) as s:
         path = f"temp_{up_file.name}"
         with open(path, "wb") as f: f.write(up_file.getbuffer())
         engine.process_pdf(path)
-        s.update(label="✅ Knowledge Base Ready!", state="complete")
+        s.update(label="✅ Knowledge Base Synchronized!", state="complete")
     st.balloons()
 
 # Chat Display
@@ -81,15 +79,15 @@ if prompt := st.chat_input("Ask a question about the document..."):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching..."):
+        with st.spinner("Analyzing..."):
             res = engine.query(prompt, 5)
             st.markdown(res["answer"])
             
             if res["sources"]:
-                with st.expander("📍 Verified Sources"):
+                with st.expander("📍 Verified Document Sources"):
                     for s in res["sources"]:
-                        st.caption(f"Relevance: {s['score']:.2f}")
-                        st.write(s)
+                        st.caption(f"Relevance Score: {s['score']:.2f}")
+                        st.write(s['text'])
                         st.divider()
             
             st.session_state.messages.append({"role": "assistant", "content": res["answer"]})
