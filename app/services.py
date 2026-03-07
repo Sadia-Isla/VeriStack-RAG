@@ -1,6 +1,6 @@
 import os
 import re
-from llama_index.core import VectorStoreIndex, StorageContext, Settings
+from llama_index.core import VectorStoreIndex, StorageContext, Settings, Document
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
@@ -10,7 +10,6 @@ class RAGEngine:
     def __init__(self):
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
-        Settings.chunk_size = 512 # Smaller chunks for more precise retrieval
         
         url = os.getenv("QDRANT_URL", "").strip("/")
         api_key = os.getenv("QDRANT_API_KEY")
@@ -18,47 +17,51 @@ class RAGEngine:
         self.vector_store = QdrantVectorStore(collection_name="docs", client=self.client)
     
     def process_pdf(self, file_path):
-        # Switching to a more robust reader for complex PDFs
-        from llama_index.readers.file import PDFReader
-        loader = PDFReader()
-        documents = loader.load_data(file=file_path)
-        
+        # Use PyMuPDF for the cleanest text extraction
+        import fitz 
+        doc_pdf = fitz.open(file_path)
         clean_docs = []
-        for doc in documents:
-            # 1. Strip out non-ASCII/Garbage symbols using Regex
-            text = doc.get_content()
-            clean_text = re.sub(r'[^\x20-\x7E]+', ' ', text) # Keep only readable English chars
-            
-            # 2. Ignore chunks that look like XML/Metadata code
-            if "<?xpacket" in clean_text or "<rdf:RDF" in clean_text or len(clean_text.strip()) < 50:
-                continue
-                
-            doc.set_content(clean_text)
-            doc.metadata = {"source": os.path.basename(file_path)}
-            clean_docs.append(doc)
 
-        if not self.client.collection_exists("docs"):
-            from qdrant_client.http import models as rest_models
-            self.client.create_collection(
-                collection_name="docs",
-                vectors_config=rest_models.VectorParams(size=1536, distance=rest_models.Distance.COSINE)
-            )
+        for page in doc_pdf:
+            text = page.get_text("text")
+            
+            # STRICT FILTER: Remove XML, XMP Metadata, and Binary Junk
+            if "<?xpacket" in text or "<rdf:Description" in text or "uuid:" in text:
+                continue
+            
+            # Remove non-printable characters and extra whitespace
+            clean_text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
+            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+
+            # Only index if it looks like real sentences (alphabetic chars > 50%)
+            letters = sum(c.isalpha() for c in clean_text)
+            if len(clean_text) > 40 and (letters / len(clean_text)) > 0.4:
+                clean_docs.append(Document(text=clean_text))
+
+        if not clean_docs:
+            raise ValueError("No readable text found in PDF. It might be an image-only scan.")
+
+        # Wipe old data to ensure the 'junk' is gone
+        if self.client.collection_exists("docs"):
+            self.client.delete_collection("docs")
+            
+        from qdrant_client.http import models as rest_models
+        self.client.create_collection(
+            collection_name="docs",
+            vectors_config=rest_models.VectorParams(size=1536, distance=rest_models.Distance.COSINE)
+        )
 
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         VectorStoreIndex.from_documents(clean_docs, storage_context=storage_context)
 
     def query(self, text: str, top_k: int):
         index = VectorStoreIndex.from_vector_store(self.vector_store)
-        # Use 'refine' mode for summaries to ensure it re-reads for quality
-        query_engine = index.as_query_engine(similarity_top_k=top_k, response_mode="refine")
+        # Use 'tree_summarize' for summary requests to get better context
+        query_engine = index.as_query_engine(
+            similarity_top_k=top_k, 
+            response_mode="tree_summarize" if "summary" in text.lower() else "compact"
+        )
         
         response = query_engine.query(text)
-        
-        sources = []
-        for node in response.source_nodes:
-            sources.append({
-                "text": node.node.get_content()[:300] + "...",
-                "score": getattr(node, 'score', 0.0)
-            })
-
+        sources = [{"text": n.node.get_content()[:200] + "...", "score": getattr(n, 'score', 0.0)} for n in response.source_nodes]
         return {"answer": str(response), "sources": sources}
