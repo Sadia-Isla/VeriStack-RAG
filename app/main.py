@@ -22,7 +22,7 @@ if "messages" not in st.session_state:
 # --- SIDEBAR: CONFIG & LINKS ---
 with st.sidebar:
     # Replace st.image with this:
-    st.markdown("<h1 style='text-align: center;'>🛡️</h1>", unsafe_allow_html=True)
+    st.image("https://img.icons8.com", width=80)
     st.title("🛡️ VeriStack RAG")
     
     with st.expander("🔑 Need API Keys?", expanded=False):
