@@ -1,5 +1,6 @@
 import os
 import re
+import pdfplumber
 from llama_index.core import VectorStoreIndex, StorageContext, Settings, Document
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -17,38 +18,47 @@ class RAGEngine:
         self.vector_store = QdrantVectorStore(collection_name="docs", client=self.client)
     
     def process_pdf(self, file_path):
-        # Use PyMuPDF for the cleanest text extraction
-        import fitz 
-        doc_pdf = fitz.open(file_path)
         clean_docs = []
+        
+        # Use pdfplumber: The most reliable for visible text
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                
+                # --- HEAVY FILTERING ---
+                # 1. Remove obvious PDF structural junk
+                junk_patterns = [
+                    r'obj\s*<', r'endobj', r'stream', r'endstream', 
+                    r'xref', r'trailer', r'startxref', r'%%EOF',
+                    r'<?xpacket', r'<rdf:', r'uuid:', r'/Metadata'
+                ]
+                
+                is_junk = any(re.search(p, text) for p in junk_patterns)
+                if is_junk:
+                    continue
 
-        for page in doc_pdf:
-            text = page.get_text("text")
-            
-            # STRICT FILTER: Remove XML, XMP Metadata, and Binary Junk
-            if "<?xpacket" in text or "<rdf:Description" in text or "uuid:" in text:
-                continue
-            
-            # Remove non-printable characters and extra whitespace
-            clean_text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
-            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                # 2. Clean symbols and normalize whitespace
+                text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
+                text = re.sub(r'\s+', ' ', text).strip()
 
-            # Only index if it looks like real sentences (alphabetic chars > 50%)
-            letters = sum(c.isalpha() for c in clean_text)
-            if len(clean_text) > 40 and (letters / len(clean_text)) > 0.4:
-                clean_docs.append(Document(text=clean_text))
+                # 3. Validation: Must be long enough and contain mostly letters
+                if len(text) > 60:
+                    letters = sum(c.isalpha() for c in text)
+                    if (letters / len(text)) > 0.5: # At least 50% letters
+                        clean_docs.append(Document(text=text))
 
         if not clean_docs:
-            raise ValueError("No readable text found in PDF. It might be an image-only scan.")
+            raise ValueError("Document appears to be an image or contains no extractable text.")
 
-        # Wipe old data to ensure the 'junk' is gone
+        # Wipe and Re-create Collection to ensure no old junk survives
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
-        from qdrant_client.http import models as rest_models
         self.client.create_collection(
             collection_name="docs",
-            vectors_config=rest_models.VectorParams(size=1536, distance=rest_models.Distance.COSINE)
+            vectors_config={"size": 1536, "distance": "Cosine"}
         )
 
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
@@ -56,12 +66,15 @@ class RAGEngine:
 
     def query(self, text: str, top_k: int):
         index = VectorStoreIndex.from_vector_store(self.vector_store)
-        # Use 'tree_summarize' for summary requests to get better context
+        # Use tree_summarize to force the LLM to synthesize an answer from all chunks
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
-            response_mode="tree_summarize" if "summary" in text.lower() else "compact"
+            response_mode="tree_summarize"
         )
         
         response = query_engine.query(text)
-        sources = [{"text": n.node.get_content()[:200] + "...", "score": getattr(n, 'score', 0.0)} for n in response.source_nodes]
+        sources = [
+            {"text": n.node.get_content()[:250] + "...", "score": getattr(n, 'score', 0.0)} 
+            for n in response.source_nodes
+        ]
         return {"answer": str(response), "sources": sources}
