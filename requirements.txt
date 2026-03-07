@@ -11,5 +11,10 @@ qdrant-client
 requests
 python-dotenv
 httpx
-pymupdf
 llama-index-readers-file
+streamlit
+llama-index
+llama-index-vector-stores-qdrant
+qdrant-client
+openai
+pdfplumber
