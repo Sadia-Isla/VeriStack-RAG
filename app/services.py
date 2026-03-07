@@ -21,14 +21,14 @@ class RAGEngine:
     def process_pdf(self, file_path):
         clean_docs = []
         
-        # Extract text using pdfplumber to ignore background code
+        # Extract text using pdfplumber to ignore background code/metadata
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if not text:
                     continue
                 
-                # --- STRIP PDF JUNK ---
+                # --- STRIP PDF JUNK PATTERNS ---
                 junk_patterns = [
                     r'obj\s*<', r'endobj', r'stream', r'endstream', 
                     r'xref', r'trailer', r'startxref', r'%%EOF',
@@ -51,7 +51,7 @@ class RAGEngine:
         if not clean_docs:
             raise ValueError("No readable text found. The PDF may be a flat image scan.")
 
-        # Refresh Qdrant Collection
+        # Refresh Qdrant Collection (Wipes old metadata junk)
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
@@ -65,14 +65,22 @@ class RAGEngine:
 
     def query(self, text: str, top_k: int):
         index = VectorStoreIndex.from_vector_store(self.vector_store)
-        # Use tree_summarize for high-quality synthesised answers
+        # Use tree_summarize for high-quality synthesized answers
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
             response_mode="tree_summarize"
         )
         
         response = query_engine.query(text)
-        sources = + "...", "score": getattr(n, 'score', 0.0)} 
+        
+        # Fixed: Ensure sources dictionary is correctly formatted
+        sources = + "...", 
+                "score": getattr(n, 'score', 0.0)
+            } 
             for n in response.source_nodes
         ]
-        return {"answer": str(response), "sources": sources}
+        
+        return {
+            "answer": str(response),
+            "sources": sources
+        }
