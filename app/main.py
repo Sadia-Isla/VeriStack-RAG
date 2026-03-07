@@ -5,74 +5,74 @@ import streamlit as st
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from services import RAGEngine
 
-st.set_page_config(page_title="VeriStack RAG", page_icon="🛡️")
+st.set_page_config(page_title="VeriStack AI", page_icon="🛡️", layout="wide")
 
-# --- UI Styling ---
-st.markdown("""<style> .stChatMessage { border-radius: 15px; margin-bottom: 10px; } </style>""", unsafe_allow_html=True)
+# Custom UI Styling
+st.markdown("""
+    <style>
+    .stChatMessage { border-radius: 20px; background-color: #f0f2f6; border: 1px solid #ddd; }
+    .stButton>button { border-radius: 10px; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Sidebar Instruction Guide
 with st.sidebar:
-    st.title("🛡️ VeriStack Admin")
-    st.info("**Step 1:** Enter Keys\n**Step 2:** Upload PDF\n**Step 3:** Index & Chat")
+    st.title("🛡️ Setup Guide")
+    st.markdown("""
+    ### **How to start:**
+    1. 🔑 **Keys**: Enter OpenAI & Qdrant details.
+    2. 📂 **Upload**: Select your PDF.
+    3. 🚀 **Index**: Click Index to 'teach' the AI.
+    4. 💬 **Chat**: Ask for a summary or details!
+    """)
     
-    user_key = st.text_input("OpenAI Key", type="password")
+    u_key = st.text_input("OpenAI Key", type="password")
     q_url = st.text_input("Qdrant URL")
     q_key = st.text_input("Qdrant Key", type="password")
     
     st.divider()
-    uploaded_file = st.file_uploader("📂 Knowledge Base", type="pdf")
-    col1, col2 = st.columns(2)
-    with col1:
-        index_btn = st.button("🚀 Index", type="primary")
-    with col2:
-        # NEW: Clear button to wipe old "junk" data from Qdrant
-        clear_btn = st.button("🗑️ Reset")
+    up_file = st.file_uploader("Upload Policy PDF", type="pdf")
+    idx_btn = st.button("🚀 Start Indexing", use_container_width=True)
 
 @st.cache_resource
-def get_engine(key, url, qk):
-    if not (key and url and qk): return None
-    os.environ["OPENAI_API_KEY"] = key
-    os.environ["QDRANT_URL"] = url
-    os.environ["QDRANT_API_KEY"] = qk
+def get_engine(k, u, qk):
+    if not (k and u and qk): return None
+    os.environ["OPENAI_API_KEY"], os.environ["QDRANT_URL"], os.environ["QDRANT_API_KEY"] = k, u, qk
     return RAGEngine()
 
-engine = get_engine(user_key, q_url, q_key)
+engine = get_engine(u_key, q_url, q_key)
 
-if clear_btn and engine:
-    engine.client.delete_collection("docs")
-    st.sidebar.success("Collection Wiped!")
-    st.rerun()
-
-st.title("🛡️ AI Document Assistant")
+st.title("🛡️ VeriStack Intelligence Portal")
 
 if not engine:
-    st.warning("Please enter your credentials in the sidebar.")
+    st.info("👋 Welcome! Please enter your API credentials in the sidebar to begin.")
     st.stop()
 
-if uploaded_file and index_btn:
-    with st.spinner("Cleaning & Indexing Document..."):
-        path = f"temp_{uploaded_file.name}"
-        with open(path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+if up_file and idx_btn:
+    with st.status("Reading document content...", expanded=True) as s:
+        path = f"temp_{up_file.name}"
+        with open(path, "wb") as f: f.write(up_file.getbuffer())
         engine.process_pdf(path)
-        st.success("Indexing Complete!")
+        s.update(label="✅ Knowledge Base Ready!", state="complete")
 
+# Chat
 for m in st.session_state.messages:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Ask me anything about the document..."):
+if prompt := st.chat_input("Ask about the document..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Scanning..."):
+        with st.spinner("Analyzing..."):
             res = engine.query(prompt, 5)
             st.markdown(res["answer"])
             if res["sources"]:
-                with st.expander("References"):
+                with st.expander("📍 View Document References"):
                     for s in res["sources"]:
-                        st.caption(f"Score: {s['score']:.2f}")
+                        st.caption(f"Relevance: {s['score']:.2f}")
                         st.write(s['text'])
             st.session_state.messages.append({"role": "assistant", "content": res["answer"]})
