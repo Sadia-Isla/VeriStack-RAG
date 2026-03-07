@@ -21,7 +21,8 @@ if "messages" not in st.session_state:
 
 # --- SIDEBAR: CONFIG & LINKS ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com", width=80)
+    # Replace st.image with this:
+    st.markdown("<h1 style='text-align: center;'>🛡️</h1>", unsafe_allow_html=True)
     st.title("🛡️ VeriStack RAG")
     
     with st.expander("🔑 Need API Keys?", expanded=False):
