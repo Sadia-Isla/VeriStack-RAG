@@ -9,11 +9,13 @@ from qdrant_client import QdrantClient
 
 class RAGEngine:
     def __init__(self):
+        # Configure global settings for LlamaIndex 0.10+
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
         
         url = os.getenv("QDRANT_URL", "").strip("/")
         api_key = os.getenv("QDRANT_API_KEY")
+        
         self.client = QdrantClient(url=url, api_key=api_key)
         self.vector_store = QdrantVectorStore(collection_name="docs", client=self.client)
     
@@ -26,20 +28,20 @@ class RAGEngine:
                 if not text:
                     continue
                 
-                # --- CLEANING (Keep it simple to avoid false errors) ---
-                # Remove non-printable characters
+                # --- UNIVERSAL CLEANING ---
+                # Remove non-printable characters and normalize whitespace
                 text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
-                # Normalize whitespace
                 text = re.sub(r'\s+', ' ', text).strip()
 
-                # Validation: Just check if we actually have text
-                if len(text) > 20: 
+                # Validation: Keep any page with more than 20 characters
+                # This ensures complex PDFs like yours aren't accidentally deleted
+                if len(text) > 20:
                     clean_docs.append(Document(text=text))
 
         if not clean_docs:
             raise ValueError("Document appears to be an image or contains no extractable text.")
 
-        # Wipe and Re-create Collection
+        # Wipe and Re-create Collection to ensure a clean sync
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
@@ -48,18 +50,27 @@ class RAGEngine:
             vectors_config={"size": 1536, "distance": "Cosine"}
         )
 
+        # Correct initialization for newer LlamaIndex versions
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         VectorStoreIndex.from_documents(clean_docs, storage_context=storage_context)
 
     def query(self, text: str, top_k: int):
+        # Build index from the existing vector store
         index = VectorStoreIndex.from_vector_store(self.vector_store)
+        
+        # tree_summarize provides the best synthesis for document analysis
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
             response_mode="tree_summarize"
         )
         
         response = query_engine.query(text)
-        sources = + "...", "score": getattr(n, 'score', 0.0)} 
+        
+        # Format sources for your UI
+        sources = + "...", 
+                "score": getattr(n, 'score', 0.0)
+            } 
             for n in response.source_nodes
         ]
+        
         return {"answer": str(response), "sources": sources}
