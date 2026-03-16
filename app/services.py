@@ -9,50 +9,38 @@ from qdrant_client import QdrantClient
 
 class RAGEngine:
     def __init__(self):
+        # Using the global Settings object (replaces deprecated ServiceContext)
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
         
+        # Connection setup
         url = os.getenv("QDRANT_URL", "").strip("/")
         api_key = os.getenv("QDRANT_API_KEY")
         self.client = QdrantClient(url=url, api_key=api_key)
         self.vector_store = QdrantVectorStore(collection_name="docs", client=self.client)
     
     def process_pdf(self, file_path):
+        """Extracts text from any text-based PDF without restrictive filtering."""
         clean_docs = []
         
-        # Use pdfplumber: The most reliable for visible text
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if not text:
                     continue
                 
-                # --- HEAVY FILTERING ---
-                # 1. Remove obvious PDF structural junk
-                junk_patterns = [
-                    r'obj\s*<', r'endobj', r'stream', r'endstream', 
-                    r'xref', r'trailer', r'startxref', r'%%EOF',
-                    r'<?xpacket', r'<rdf:', r'uuid:', r'/Metadata'
-                ]
-                
-                is_junk = any(re.search(p, text) for p in junk_patterns)
-                if is_junk:
-                    continue
-
-                # 2. Clean symbols and normalize whitespace
-                text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
+                # Basic cleanup: remove null bytes and normalize whitespace
+                text = text.replace('\x00', '') 
                 text = re.sub(r'\s+', ' ', text).strip()
 
-                # 3. Validation: Must be long enough and contain mostly letters
-                if len(text) > 60:
-                    letters = sum(c.isalpha() for c in text)
-                    if (letters / len(text)) > 0.5: # At least 50% letters
-                        clean_docs.append(Document(text=text))
+                # Validation: Just ensures there is actual content
+                if len(text) > 10:
+                    clean_docs.append(Document(text=text))
 
         if not clean_docs:
-            raise ValueError("Document appears to be an image or contains no extractable text.")
+            raise ValueError("No text found. If this is a scanned image, please use an OCR tool.")
 
-        # Wipe and Re-create Collection to ensure no old junk survives
+        # Re-create collection for a fresh index
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
@@ -61,20 +49,29 @@ class RAGEngine:
             vectors_config={"size": 1536, "distance": "Cosine"}
         )
 
+        # Indexing
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         VectorStoreIndex.from_documents(clean_docs, storage_context=storage_context)
 
     def query(self, text: str, top_k: int):
+        """Retrieves and synthesizes answers using the vector store."""
         index = VectorStoreIndex.from_vector_store(self.vector_store)
-        # Use tree_summarize to force the LLM to synthesize an answer from all chunks
+        
+        # 'tree_summarize' is best for synthesizing answers from multiple pages
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
             response_mode="tree_summarize"
         )
         
         response = query_engine.query(text)
+        
+        # Format sources for UI display
         sources = [
-            {"text": n.node.get_content()[:250] + "...", "score": getattr(n, 'score', 0.0)} 
+            {
+                "text": n.node.get_content()[:250] + "...", 
+                "score": getattr(n, 'score', 0.0)
+            } 
             for n in response.source_nodes
         ]
+        
         return {"answer": str(response), "sources": sources}
