@@ -18,3 +18,8 @@ llama-index-vector-stores-qdrant
 qdrant-client
 openai
 pdfplumber
+llama-index-core
+llama-index-llms-openai  # or whichever LLM you are using
+llama-index-embeddings-openai
+llama-index-readers-file
+
