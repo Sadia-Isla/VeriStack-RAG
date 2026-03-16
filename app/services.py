@@ -61,11 +61,12 @@ class RAGEngine:
         
         response = query_engine.query(text)
         
-        # FIXED INDENTATION HERE
-        sources = + "...", 
+        # Format sources with strictly cleaned indentation
+        sources = []
+        for n in response.source_nodes:
+            sources.append({
+                "text": n.node.get_content()[:250] + "...",
                 "score": getattr(n, 'score', 0.0)
-            } 
-            for n in response.source_nodes
-        ]
+            })
         
         return {"answer": str(response), "sources": sources}
