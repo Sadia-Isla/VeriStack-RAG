@@ -7,9 +7,6 @@ llama-index-readers-file
 qdrant-client
 openai
 pdfplumber
-fastapi
-uvicorn
-python-multipart
-requests
 python-dotenv
+requests
 httpx
