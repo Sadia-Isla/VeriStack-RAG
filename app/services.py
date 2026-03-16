@@ -9,7 +9,7 @@ from qdrant_client import QdrantClient
 
 class RAGEngine:
     def __init__(self):
-        # Configure global settings for LlamaIndex 0.10+
+        # Configure global settings
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
         
@@ -28,20 +28,18 @@ class RAGEngine:
                 if not text:
                     continue
                 
-                # --- UNIVERSAL CLEANING ---
-                # Remove non-printable characters and normalize whitespace
+                # Cleanup and normalization
+                text = text.replace('\x00', '') 
                 text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
                 text = re.sub(r'\s+', ' ', text).strip()
 
-                # Validation: Keep any page with more than 20 characters
-                # This ensures complex PDFs like yours aren't accidentally deleted
                 if len(text) > 20:
                     clean_docs.append(Document(text=text))
 
         if not clean_docs:
             raise ValueError("Document appears to be an image or contains no extractable text.")
 
-        # Wipe and Re-create Collection to ensure a clean sync
+        # Reset Collection
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
@@ -50,15 +48,12 @@ class RAGEngine:
             vectors_config={"size": 1536, "distance": "Cosine"}
         )
 
-        # Correct initialization for newer LlamaIndex versions
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         VectorStoreIndex.from_documents(clean_docs, storage_context=storage_context)
 
     def query(self, text: str, top_k: int):
-        # Build index from the existing vector store
         index = VectorStoreIndex.from_vector_store(self.vector_store)
         
-        # tree_summarize provides the best synthesis for document analysis
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
             response_mode="tree_summarize"
@@ -66,7 +61,7 @@ class RAGEngine:
         
         response = query_engine.query(text)
         
-        # Format sources for your UI
+        # FIXED INDENTATION HERE
         sources = + "...", 
                 "score": getattr(n, 'score', 0.0)
             } 
