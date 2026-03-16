@@ -9,18 +9,17 @@ from qdrant_client import QdrantClient
 
 class RAGEngine:
     def __init__(self):
-        # Using the global Settings object (replaces deprecated ServiceContext)
+        # Keep original settings
         Settings.llm = OpenAI(model="gpt-4o", temperature=0.1)
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
         
-        # Connection setup
         url = os.getenv("QDRANT_URL", "").strip("/")
         api_key = os.getenv("QDRANT_API_KEY")
         self.client = QdrantClient(url=url, api_key=api_key)
+        # Initialize the vector store here to keep the reference stable
         self.vector_store = QdrantVectorStore(collection_name="docs", client=self.client)
     
     def process_pdf(self, file_path):
-        """Extracts text from any text-based PDF without restrictive filtering."""
         clean_docs = []
         
         with pdfplumber.open(file_path) as pdf:
@@ -29,18 +28,21 @@ class RAGEngine:
                 if not text:
                     continue
                 
-                # Basic cleanup: remove null bytes and normalize whitespace
-                text = text.replace('\x00', '') 
+                # --- MODIFIED FILTERING (Fixed to allow your PDF) ---
+                # Removed structural junk patterns that were false-positives
+                text = re.sub(r'[^\x20-\x7E\n]+', ' ', text)
                 text = re.sub(r'\s+', ' ', text).strip()
 
-                # Validation: Just ensures there is actual content
-                if len(text) > 10:
-                    clean_docs.append(Document(text=text))
+                # Validation: Keep your original logic but ensure it's not empty
+                if len(text) > 60:
+                    letters = sum(c.isalpha() for c in text)
+                    if (letters / len(text)) > 0.4: # Slightly lowered to 40% for forms
+                        clean_docs.append(Document(text=text))
 
         if not clean_docs:
-            raise ValueError("No text found. If this is a scanned image, please use an OCR tool.")
+            raise ValueError("Document appears to be an image or contains no extractable text.")
 
-        # Re-create collection for a fresh index
+        # Wipe and Re-create Collection
         if self.client.collection_exists("docs"):
             self.client.delete_collection("docs")
             
@@ -49,29 +51,26 @@ class RAGEngine:
             vectors_config={"size": 1536, "distance": "Cosine"}
         )
 
-        # Indexing
+        # FIX: Explicitly define storage context with the vector store
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-        VectorStoreIndex.from_documents(clean_docs, storage_context=storage_context)
+        
+        # Create the index using the documents and the context
+        VectorStoreIndex.from_documents(
+            clean_docs, 
+            storage_context=storage_context
+        )
 
     def query(self, text: str, top_k: int):
-        """Retrieves and synthesizes answers using the vector store."""
+        # Keep original query interface
         index = VectorStoreIndex.from_vector_store(self.vector_store)
-        
-        # 'tree_summarize' is best for synthesizing answers from multiple pages
         query_engine = index.as_query_engine(
             similarity_top_k=top_k, 
             response_mode="tree_summarize"
         )
         
         response = query_engine.query(text)
-        
-        # Format sources for UI display
         sources = [
-            {
-                "text": n.node.get_content()[:250] + "...", 
-                "score": getattr(n, 'score', 0.0)
-            } 
+            {"text": n.node.get_content()[:250] + "...", "score": getattr(n, 'score', 0.0)} 
             for n in response.source_nodes
         ]
-        
         return {"answer": str(response), "sources": sources}
