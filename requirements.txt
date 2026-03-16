@@ -1,9 +1,11 @@
-# No version pin for setuptools needed on 3.13
-streamlit>=1.35.0
+# CORE & PLUGINS (No legacy 'llama-index' package)
 llama-index-core>=0.12.0
 llama-index-llms-openai
 llama-index-embeddings-openai
 llama-index-vector-stores-qdrant
+llama-index-readers-file
+
+streamlit>=1.35.0
 fastapi
 uvicorn
 python-multipart
@@ -11,15 +13,7 @@ qdrant-client
 requests
 python-dotenv
 httpx
-llama-index-readers-file
-streamlit
-llama-index
-llama-index-vector-stores-qdrant
-qdrant-client
 openai
 pdfplumber
-llama-index-core
-llama-index-llms-openai  # or whichever LLM you are using
-llama-index-embeddings-openai
-llama-index-readers-file
+
 
